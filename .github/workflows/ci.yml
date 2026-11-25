@@ -72,15 +72,19 @@ jobs:
 
       - name: Ejecutar los scripts en orden
         run: |
-          for f in database/01_crear_base_datos.sql database/02_mejoras_costes_flota.sql database/03_corregir_coordenadas.sql; do
+          for f in database/0*.sql; do
             echo "::group::$f"
             docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot --default-character-set=utf8mb4 < "$f"
             echo "::endgroup::"
           done
 
-      - name: Comprobaciones (database/tests/verificar.sql)
+      - name: Comprobaciones (database/tests/*.sql)
         run: |
-          docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot -N -B --default-character-set=utf8mb4 BDIADelivery \
-            < database/tests/verificar.sql | tee resultado.txt
+          for t in database/tests/*.sql; do
+            echo "::group::$t"
+            docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot -N -B --default-character-set=utf8mb4 BDIADelivery \
+              < "$t" | tee -a resultado.txt
+            echo "::endgroup::"
+          done
           awk -F'\t' '$2 != "1" { print "::error::Falla: " $1; bad = 1 } END { exit bad }' resultado.txt
           echo "Todas las comprobaciones correctas ($(wc -l < resultado.txt))."
