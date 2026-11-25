@@ -29,7 +29,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Análisis estático (ruff)
-        run: ruff check tools optimizador tests
+        run: ruff check tools optimizador tests app.py
 
       - name: Tests unitarios del optimizador (pytest)
         run: pytest -q

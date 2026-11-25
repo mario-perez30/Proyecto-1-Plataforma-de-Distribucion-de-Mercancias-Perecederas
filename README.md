@@ -14,7 +14,7 @@ Proyecto del Máster de FP en Inteligencia Artificial y Big Data (Stucom).
 | --- | --- |
 | Base de datos `BDIADelivery` (datos, costes, flota, reglas, vistas) | Hecha y validada en CI |
 | Optimizador de rutas (OR-Tools y Clarke-Wright) y flota mínima | Hecho y probado en CI |
-| Interfaz con mapa de rutas | Pendiente |
+| Interfaz con mapa de rutas (Streamlit) | Hecha |
 | Documentación (memoria) | En curso |
 
 ## Estructura
@@ -77,6 +77,19 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt   # Window
 ```
 
 La conexión usa las variables `BDIA_HOST`, `BDIA_PORT`, `BDIA_USER`, `BDIA_PASSWORD` y `BDIA_DB`. Por defecto, MySQL de XAMPP en local con `root` sin contraseña.
+
+## Interfaz (Streamlit)
+
+```bash
+.venv/Scripts/streamlit run app.py      # abre http://localhost:8501
+```
+
+| Pestaña | Qué hace |
+| --- | --- |
+| Planificar | Elige escenario, camión y algoritmo; calcula las rutas, muestra camiones, viajes, km, coste, ahorro frente a externalizar y CO2, el mapa y la tabla de viajes; opcionalmente lo guarda |
+| Planificaciones | Compara todas las planificaciones guardadas (tabla y gráficos) y muestra el mapa de cualquiera |
+| Pedidos | Pedidos con sus fechas de fabricación, caducidad, límite de entrega y horas de reparto |
+| Parámetros | Coste por km de cada camión, parámetros del sistema y precios de combustible |
 
 ## Regenerar los scripts
 
