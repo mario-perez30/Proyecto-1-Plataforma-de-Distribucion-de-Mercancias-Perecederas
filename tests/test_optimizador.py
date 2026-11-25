@@ -94,6 +94,39 @@ def test_flota_reutiliza_camion_cuando_hay_tiempo(escenario):
     assert viajes[camiones[0][1]].salida >= viajes[camiones[0][0]].regreso
 
 
+def test_eventos_cubren_todo_el_viaje_sin_huecos(escenario):
+    v = evaluar_viaje([5], escenario, matriz_escenario(escenario))      # Lisboa: viaje largo
+    tipos = [e["tipo"] for e in v.eventos]
+    assert tipos[0] == "carga" and "descarga" in tipos
+    assert "pausa" in tipos and "descanso" in tipos, "un viaje de más de 9 h necesita pausas y descanso"
+    for a, b in zip(v.eventos, v.eventos[1:]):
+        assert a["fin"] == b["inicio"], "los eventos deben ser contiguos"
+    assert v.eventos[-1]["fin"] == v.regreso
+    horas = sum((e["fin"] - e["inicio"]).total_seconds() for e in v.eventos if e["tipo"] == "conduccion") / 3600
+    assert horas == pytest.approx(v.horas_conduccion)
+
+
+def test_desplazar_viaje_mueve_tambien_los_eventos(escenario):
+    from optimizador.viajes import desplazar_viaje
+    v = evaluar_viaje([0], escenario, matriz_escenario(escenario))
+    v2 = desplazar_viaje(v, v.salida + timedelta(hours=3))
+    assert v2.eventos[0]["inicio"] - v.eventos[0]["inicio"] == timedelta(hours=3)
+    assert v2.regreso - v.regreso == timedelta(hours=3)
+
+
+def test_conductor_descansa_entre_viajes(escenario):
+    from optimizador.persistencia import asignar_conductores
+    sol = planificar(escenario, "directo")
+    asignacion = asignar_conductores(sol, [1, 2, 3, 4, 5, 6, 7, 8], escenario.params.descanso_diario_h)
+    por_conductor: dict = {}
+    for k, c in asignacion.items():
+        por_conductor.setdefault(c, []).append(sol.viajes[k])
+    for viajes in por_conductor.values():
+        viajes.sort(key=lambda v: v.salida)
+        for a, b in zip(viajes, viajes[1:]):
+            assert (b.salida - a.regreso).total_seconds() / 3600 >= escenario.params.descanso_diario_h
+
+
 @pytest.mark.parametrize("algoritmo", ["directo", "clarke-wright", "ortools"])
 def test_planificar_sin_pedidos_fuera_de_plazo(escenario, algoritmo):
     sol = planificar(escenario, algoritmo, segundos=2)

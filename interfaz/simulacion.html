@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --bg:#ffffff; --panel:#f6f7f9; --ink:#1f2933; --quiet:#6b7280; --line:#e5e7eb;
+          --drive:#2563eb; --pause:#f59e0b; --rest:#7c3aed; --unload:#16a34a; --load:#64748b; --done:#9ca3af; }
+  * { box-sizing:border-box; font-family: "Source Sans Pro", system-ui, -apple-system, Segoe UI, sans-serif; }
+  body { margin:0; color:var(--ink); background:var(--bg); }
+  .wrap { display:grid; grid-template-columns: 1fr 330px; gap:12px; }
+  #mapa { height:470px; border-radius:12px; border:1px solid var(--line); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .titulo { font-weight:700; font-size:15px; margin-bottom:2px; }
+  .sub { color:var(--quiet); font-size:12.5px; margin-bottom:10px; }
+  .estado { display:inline-block; padding:4px 10px; border-radius:999px; color:#fff; font-weight:700; font-size:13px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .kpi { background:#fff; border:1px solid var(--line); border-radius:10px; padding:7px 9px; }
+  .kpi .l { color:var(--quiet); font-size:11.5px; }
+  .kpi .v { font-weight:700; font-size:17px; }
+  .barra { height:6px; background:var(--line); border-radius:3px; margin-top:4px; overflow:hidden; }
+  .barra > div { height:100%; background:var(--drive); }
+  .lista { margin-top:10px; font-size:12.5px; max-height:150px; overflow:auto; }
+  .lista div { display:flex; justify-content:space-between; gap:6px; padding:3px 0; border-bottom:1px dashed var(--line); }
+  .entregado { color:var(--done); text-decoration:line-through; }
+  .controles { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  button { border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 12px; cursor:pointer; font-weight:600; }
+  button.primario { background:#e11d48; border-color:#e11d48; color:#fff; }
+  select { border:1px solid var(--line); border-radius:8px; padding:6px; }
+  #reloj { font-weight:700; font-size:15px; min-width:150px; }
+  #linea { position:relative; height:26px; margin-top:10px; border-radius:6px; overflow:hidden; cursor:pointer; border:1px solid var(--line); }
+  #linea .seg { position:absolute; top:0; height:100%; }
+  #cursor { position:absolute; top:-2px; width:3px; height:30px; background:#111; }
+  .leyenda { display:flex; gap:14px; font-size:12px; color:var(--quiet); margin-top:6px; flex-wrap:wrap; }
+  .leyenda span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; background:var(--c); vertical-align:-1px; }
+  .camion { font-size:26px; line-height:26px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
+  .num { background:#111; color:#fff; border-radius:50%; width:22px; height:22px; text-align:center; line-height:22px; font-size:12px; font-weight:700; border:2px solid #fff; }
+  .num.ok { background:var(--unload); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <div id="mapa"></div>
+    <div class="controles">
+      <button id="play" class="primario">▶ Reproducir</button>
+      <button id="reinicio">⟲ Reiniciar</button>
+      <label>Velocidad
+        <select id="vel">
+          <option value="600">10 min / s</option>
+          <option value="3600" selected>1 h / s</option>
+          <option value="14400">4 h / s</option>
+          <option value="43200">12 h / s</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="seguir" checked> Seguir al camión</label>
+      <span id="reloj"></span>
+    </div>
+    <div id="linea"><div id="cursor"></div></div>
+    <div class="leyenda">
+      <span style="--c:var(--load)">Carga</span><span style="--c:var(--drive)">Conducción</span>
+      <span style="--c:var(--pause)">Pausa 45 min</span><span style="--c:var(--rest)">Descanso diario 11 h</span>
+      <span style="--c:var(--unload)">Descarga</span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="titulo" id="tit"></div>
+    <div class="sub" id="sub"></div>
+    <span class="estado" id="estado"></span>
+    <div class="sub" id="detalle" style="margin:6px 0 0"></div>
+    <div class="grid">
+      <div class="kpi"><div class="l">Velocidad</div><div class="v" id="v_vel"></div></div>
+      <div class="kpi"><div class="l">Km recorridos</div><div class="v" id="v_km"></div></div>
+      <div class="kpi"><div class="l">Conducción hoy (máx. 9 h)</div><div class="v" id="v_dia"></div><div class="barra"><div id="b_dia"></div></div></div>
+      <div class="kpi"><div class="l">Conducción seguida (máx. 4,5 h)</div><div class="v" id="v_cont"></div><div class="barra"><div id="b_cont"></div></div></div>
+      <div class="kpi"><div class="l">Carga a bordo</div><div class="v" id="v_carga"></div><div class="barra"><div id="b_carga" style="background:var(--unload)"></div></div></div>
+      <div class="kpi"><div class="l">Próxima parada</div><div class="v" id="v_prox" style="font-size:14px"></div></div>
+    </div>
+    <div class="lista" id="lista"></div>
+  </div>
+</div>
+<script>
+const D = /*__DATOS__*/null;
+const COLORES = { conduccion:"#2563eb", pausa:"#f59e0b", descanso:"#7c3aed", descarga:"#16a34a", carga:"#64748b" };
+const NOMBRES = { conduccion:"Conduciendo", pausa:"Pausa obligatoria", descanso:"Descanso diario",
+                  descarga:"Descargando", carga:"Cargando en Mataró", fin:"Viaje terminado" };
+const H = 3600000;
+const pad = n => String(n).padStart(2, "0");
+const fecha = ms => { const d = new Date(ms); return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth()+1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; };
+const num = (x, dec=0) => x.toLocaleString("es-ES", {minimumFractionDigits:dec, maximumFractionDigits:dec});
+
+// --- Mapa -------------------------------------------------------------------
+const mapa = L.map("mapa", { zoomControl:true });
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:18 }).addTo(mapa);
+const pts = D.puntos.map(p => L.latLng(p[0], p[1]));
+L.polyline(pts, { color:"#94a3b8", weight:4, dashArray:"6 8" }).addTo(mapa);
+const recorrido = L.polyline([], { color:"#e11d48", weight:5 }).addTo(mapa);
+mapa.fitBounds(L.latLngBounds(pts).pad(0.15));
+L.marker(pts[0], { icon:L.divIcon({ className:"", html:'<div class="num" style="background:#e11d48;width:28px;height:28px;line-height:28px">M</div>', iconSize:[28,28] }) })
+  .addTo(mapa).bindTooltip("Mataró · almacén");
+const marcasParada = D.paradas.map((p, i) => L.marker(pts[i+1], { icon:L.divIcon({ className:"", html:`<div class="num">${p.orden}</div>`, iconSize:[22,22] }) })
+  .addTo(mapa).bindTooltip(`${p.orden}. ${p.ciudad} (${p.pais}) · pedido ${p.pedido} · ${num(p.unidades)} uds`));
+const camion = L.marker(pts[0], { icon:L.divIcon({ className:"camion", html:"🚚", iconSize:[28,28], iconAnchor:[14,14] }), zIndexOffset:1000 }).addTo(mapa);
+
+const pos = (tramo, f) => { const a = pts[tramo], b = pts[Math.min(tramo+1, pts.length-1)];
+  return L.latLng(a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f); };
+// Puntos donde el conductor hace pausas y descansos
+D.eventos.filter(e => e.tipo === "pausa" || e.tipo === "descanso").forEach(e => {
+  L.circleMarker(pos(e.tramo, e.f0), { radius: e.tipo === "descanso" ? 7 : 5, color:"#fff", weight:2,
+    fillColor:COLORES[e.tipo], fillOpacity:1 }).addTo(mapa)
+    .bindTooltip(`${NOMBRES[e.tipo]} · ${fecha(e.inicio)} → ${fecha(e.fin)}`);
+});
+
+// --- Línea de tiempo -------------------------------------------------------
+const T0 = D.inicio, T1 = D.fin, DUR = T1 - T0;
+const linea = document.getElementById("linea"), cursor = document.getElementById("cursor");
+D.eventos.forEach(e => { const s = document.createElement("div"); s.className = "seg";
+  s.style.left = (100 * (e.inicio - T0) / DUR) + "%"; s.style.width = (100 * (e.fin - e.inicio) / DUR) + "%";
+  s.style.background = COLORES[e.tipo]; s.title = `${NOMBRES[e.tipo]} · ${fecha(e.inicio)} → ${fecha(e.fin)}`;
+  linea.insertBefore(s, cursor); });
+linea.addEventListener("click", ev => { const r = linea.getBoundingClientRect();
+  t = T0 + DUR * (ev.clientX - r.left) / r.width; pintar(); });
+
+// --- Estado del viaje en el instante t ------------------------------------
+const kmAntes = i => D.km_tramos.slice(0, i).reduce((a, b) => a + b, 0);
+function estado(t) {
+  let dia = 0, cont = 0, ev = null;
+  for (const e of D.eventos) {
+    if (e.inicio > t) break;
+    const fin = Math.min(e.fin, t);
+    if (e.tipo === "conduccion") { dia += (fin - e.inicio) / H; cont += (fin - e.inicio) / H; }
+    if (e.tipo === "descanso" && e.fin <= t) { dia = 0; cont = 0; }
+    if (e.tipo === "pausa" && e.fin <= t) cont = 0;
+    ev = e;
+  }
+  if (!ev || t >= T1) return { tipo: t >= T1 ? "fin" : "carga", tramo: t >= T1 ? pts.length - 2 : 0, f: t >= T1 ? 1 : 0, dia, cont };
+  let f = ev.f0;
+  if (ev.tipo === "conduccion") f = ev.f0 + (ev.f1 - ev.f0) * Math.min(1, (t - ev.inicio) / (ev.fin - ev.inicio));
+  return { tipo: ev.tipo, tramo: ev.tramo, f, dia, cont, ev };
+}
+
+let t = T0, play = false, ultimo = null;
+function pintar() {
+  const s = estado(t);
+  const p = pos(s.tramo, s.f);
+  camion.setLatLng(p);
+  recorrido.setLatLngs(pts.slice(0, s.tramo + 1).concat([p]));
+  if (document.getElementById("seguir").checked && play) mapa.panTo(p, { animate:false });
+  const entregados = D.paradas.filter(x => x.salida <= t);
+  const enDescarga = s.tipo === "descarga" ? D.paradas[s.tramo] : null;
+  const aBordo = D.unidades - entregados.reduce((a, x) => a + x.unidades, 0);
+  const prox = D.paradas.find(x => x.salida > t);
+  const km = s.tipo === "fin" ? D.km_total : kmAntes(s.tramo) + s.f * D.km_tramos[s.tramo];
+  document.getElementById("reloj").textContent = "🕒 " + fecha(t);
+  const est = document.getElementById("estado");
+  est.textContent = NOMBRES[s.tipo]; est.style.background = s.tipo === "fin" ? "#111" : COLORES[s.tipo];
+  let det = "";
+  if (s.ev && s.tipo !== "conduccion") det = `Hasta las ${fecha(s.ev.fin)}`;
+  if (enDescarga) det = `Entregando el pedido ${enDescarga.pedido} en ${enDescarga.ciudad} · ${det}`;
+  if (s.tipo === "conduccion") det = s.tramo < D.paradas.length ? `Hacia ${D.paradas[s.tramo].ciudad}` : "Volviendo a Mataró";
+  document.getElementById("detalle").textContent = det;
+  document.getElementById("v_vel").textContent = s.tipo === "conduccion" ? `${num(D.velocidad)} km/h` : "0 km/h";
+  document.getElementById("v_km").textContent = `${num(km)} / ${num(D.km_total)}`;
+  document.getElementById("v_dia").textContent = `${num(s.dia, 1)} h`;
+  document.getElementById("b_dia").style.width = Math.min(100, 100 * s.dia / D.params.max_diaria) + "%";
+  document.getElementById("v_cont").textContent = `${num(s.cont, 1)} h`;
+  document.getElementById("b_cont").style.width = Math.min(100, 100 * s.cont / D.params.continua) + "%";
+  document.getElementById("v_carga").textContent = `${num(aBordo)} uds`;
+  document.getElementById("b_carga").style.width = (100 * aBordo / D.capacidad) + "%";
+  document.getElementById("v_prox").textContent = prox ? `${prox.ciudad} · ${fecha(prox.llegada)}` : "Mataró";
+  document.getElementById("lista").innerHTML = D.paradas.map(x => {
+    const ok = x.salida <= t, margen = (x.limite - x.llegada) / H;
+    const carga = x.carga.map(c => `${c.categoria} ${num(c.unidades)}`).join(", ");
+    return `<div class="${ok ? "entregado" : ""}" title="${carga}"><span>${x.orden}. ${x.ciudad} · ped. ${x.pedido} · ${num(x.unidades)} uds</span>`
+         + `<span>${ok ? "✔ entregado" : "llega " + fecha(x.llegada)} · margen ${num(margen)} h</span></div>`;
+  }).join("");
+  marcasParada.forEach((m, i) => { const el = m.getElement(); if (el) el.firstChild.classList.toggle("ok", D.paradas[i].salida <= t); });
+  cursor.style.left = `calc(${100 * (t - T0) / DUR}% - 1px)`;
+}
+
+function bucle(ahora) {
+  if (play) {
+    if (ultimo !== null) t = Math.min(T1, t + (ahora - ultimo) * Number(document.getElementById("vel").value));
+    ultimo = ahora;
+    if (t >= T1) { play = false; document.getElementById("play").textContent = "▶ Reproducir"; }
+    pintar();
+  }
+  requestAnimationFrame(bucle);
+}
+document.getElementById("play").onclick = () => {
+  if (t >= T1) t = T0;
+  play = !play; ultimo = null;
+  document.getElementById("play").textContent = play ? "⏸ Pausa" : "▶ Reproducir";
+};
+document.getElementById("reinicio").onclick = () => { t = T0; play = false; ultimo = null;
+  document.getElementById("play").textContent = "▶ Reproducir"; mapa.fitBounds(L.latLngBounds(pts).pad(0.15)); pintar(); };
+
+document.getElementById("tit").textContent = `Camión ${D.camion} · viaje ${D.viaje} · ${D.matricula}`;
+document.getElementById("sub").textContent = `👤 ${D.conductor} · ${D.tipo} · ${num(D.unidades)} uds (${num(100 * D.unidades / D.capacidad)} % de carga) · ${num(D.km_total)} km · ${num(D.coste)} €`;
+pintar();
+requestAnimationFrame(bucle);
+</script>
+</body>
+</html>

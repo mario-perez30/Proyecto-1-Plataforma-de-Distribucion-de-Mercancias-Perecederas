@@ -28,7 +28,7 @@ def evaluar_viaje(secuencia: list[int], esc: Escenario, km: list[list[float]],
         salida = max(x.listo for x in pedidos) + timedelta(hours=p.carga_h)
 
     reloj = RelojConductor(salida - timedelta(hours=p.carga_h), p)
-    reloj.trabajar(p.carga_h)
+    reloj.trabajar(p.carga_h, "carga")
 
     paradas: list[Parada] = []
     km_total = 0.0
@@ -38,11 +38,12 @@ def evaluar_viaje(secuencia: list[int], esc: Escenario, km: list[list[float]],
     if unidades > tipo.capacidad:
         factible, motivo = False, f"capacidad superada ({unidades} > {tipo.capacidad})"
 
-    for i, ped in zip(secuencia, pedidos):
+    for tramo, (i, ped) in enumerate(zip(secuencia, pedidos)):
         d = km[nodo_ant][i + 1]
+        reloj.tramo = tramo
         reloj.conducir(d / tipo.velocidad_kmh)
         llegada = reloj.t
-        reloj.trabajar(ped.descarga_h)
+        reloj.trabajar(ped.descarga_h, "descarga")
         paradas.append(Parada(pedido=ped, km_desde_anterior=d, llegada=llegada, salida=reloj.t))
         km_total += d
         nodo_ant = i + 1
@@ -50,6 +51,7 @@ def evaluar_viaje(secuencia: list[int], esc: Escenario, km: list[list[float]],
             factible, motivo = False, f"pedido {ped.id} llega después de su límite"
 
     d = km[nodo_ant][0]
+    reloj.tramo = len(pedidos)
     reloj.conducir(d / tipo.velocidad_kmh)
     km_total += d
 
@@ -73,6 +75,7 @@ def evaluar_viaje(secuencia: list[int], esc: Escenario, km: list[list[float]],
         coste_dietas=(pernoctas + 1) * p.dieta_dia + pernoctas * p.pernocta,
         factible=factible,
         motivo=motivo,
+        eventos=reloj.eventos,
     )
 
 
@@ -81,7 +84,9 @@ def desplazar_viaje(v: Viaje, nueva_salida: datetime) -> Viaje:
     delta = nueva_salida - v.salida
     paradas = [Parada(x.pedido, x.km_desde_anterior, x.llegada + delta, x.salida + delta) for x in v.paradas]
     fuera = [x.pedido.id for x in paradas if x.llegada > x.pedido.limite]
+    eventos = [{**e, "inicio": e["inicio"] + delta, "fin": e["fin"] + delta} for e in v.eventos]
     return Viaje(**{**v.__dict__, "paradas": paradas, "salida": v.salida + delta, "regreso": v.regreso + delta,
+                    "eventos": eventos,
                     "factible": v.factible and not fuera,
                     "motivo": v.motivo or (f"pedido {fuera[0]} llega después de su límite" if fuera else "")})
 

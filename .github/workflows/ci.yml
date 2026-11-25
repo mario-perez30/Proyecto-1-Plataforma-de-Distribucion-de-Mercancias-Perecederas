@@ -39,6 +39,11 @@ jobs:
           python tools/convertir_sqlserver_a_mysql.py database/original/script_sqlserver.sql "$RUNNER_TEMP/01.sql"
           cmp database/01_crear_base_datos.sql "$RUNNER_TEMP/01.sql"
 
+      - name: 05_flota_conductores.sql se regenera idéntico
+        run: |
+          python tools/generar_flota.py "$RUNNER_TEMP/05.sql"
+          cmp database/05_flota_conductores.sql "$RUNNER_TEMP/05.sql"
+
       - name: 03_corregir_coordenadas.sql se regenera idéntico
         run: |
           python tools/generar_coordenadas.py database/original/script_sqlserver.sql "$RUNNER_TEMP/03.sql" "$RUNNER_TEMP/mapa.png"
@@ -107,6 +112,8 @@ jobs:
           pip install pymysql==1.2.4 cryptography==50.0.2
           python -m optimizador --algoritmo clarke-wright
           r=$(docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot -N -B BDIADelivery \
-            -e "SELECT PedidosPlanificados = 133 AND PedidosFueraDePlazo = 0 AND NumCamiones > 0 FROM vw_ResumenPlanificacion ORDER BY IdPlanificacion DESC LIMIT 1")
+            -e "SELECT PedidosPlanificados = 133 AND PedidosFueraDePlazo = 0 AND NumCamiones > 0
+                AND (SELECT COUNT(*) FROM Rutas WHERE IdConductor IS NULL OR IdVehiculo IS NULL) = 0
+                FROM vw_ResumenPlanificacion ORDER BY IdPlanificacion DESC LIMIT 1")
           [ "$r" = "1" ] || { echo "::error::La planificación guardada no es válida ($r)"; exit 1; }
           echo "Planificación guardada: 133 pedidos, 0 fuera de plazo."

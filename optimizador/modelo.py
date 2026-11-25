@@ -126,6 +126,7 @@ class Viaje:
     coste_dietas: float
     factible: bool
     motivo: str = ""
+    eventos: list[dict] = field(default_factory=list)   # línea de tiempo del conductor (ver tiempos.py)
 
     @property
     def coste_total(self) -> float:
