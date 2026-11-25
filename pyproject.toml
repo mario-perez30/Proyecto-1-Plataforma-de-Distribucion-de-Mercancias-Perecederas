@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "Prototipo de IA para rutas de reparto y flota mínima de IA DELIVERY SL"
 requires-python = ">=3.10"
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 140
 target-version = "py310"
