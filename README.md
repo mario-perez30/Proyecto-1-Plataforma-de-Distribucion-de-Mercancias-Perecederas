@@ -25,6 +25,7 @@ database/
   02_mejoras_costes_flota.sql    Costes, flota, cadena de frío, escenarios, resultados, funciones y vistas
   03_corregir_coordenadas.sql    Coordenadas realistas para los 1.500 destinos
   04_fechas_caducidad.sql        Fechas de fabricación y caducidad y totales de cada pedido, con triggers
+  05_flota_conductores.sql       70 camiones y 60 conductores ficticios
   original/script_sqlserver.sql  Export original de SQL Server (UTF-16), fuente de los scripts
   tests/verificar.sql            Comprobaciones de datos, vistas y costes
   tests/probar_triggers.sql      Prueba de los triggers (se deshace con ROLLBACK)
@@ -84,12 +85,16 @@ La conexión usa las variables `BDIA_HOST`, `BDIA_PORT`, `BDIA_USER`, `BDIA_PASS
 .venv/Scripts/streamlit run app.py      # abre http://localhost:8501
 ```
 
-| Pestaña | Qué hace |
+| Página | Qué hace |
 | --- | --- |
-| Planificar | Elige escenario, camión y algoritmo; calcula las rutas, muestra camiones, viajes, km, coste, ahorro frente a externalizar y CO2, el mapa y la tabla de viajes; opcionalmente lo guarda |
-| Planificaciones | Compara todas las planificaciones guardadas (tabla y gráficos) y muestra el mapa de cualquiera |
-| Pedidos | Pedidos con sus fechas de fabricación, caducidad, límite de entrega y horas de reparto |
+| Simulación en tiempo real | Eliges una planificación y una ruta, y el camión se mueve por el mapa (OpenStreetMap). Muestra conductor, matrícula, estado (conduciendo, pausa, descanso diario, descarga), velocidad, km, horas al volante del día y seguidas, carga a bordo, próxima parada, pausas y descansos en el mapa y una línea de tiempo en la que se puede hacer clic. Debajo, qué transporta (familias y régimen de temperatura) y el itinerario con el margen de cada entrega |
+| Planificar | Calcula una planificación nueva con OR-Tools, Clarke-Wright o envío directo; la guarda con camión y conductor asignados |
+| Comparativa | Indicadores y gráficos de coste, camiones y CO2 de todas las planificaciones |
+| Pedidos | Pedidos con sus fechas de fabricación, caducidad, límite de entrega y horas de reparto, con filtro por país |
+| Flota y conductores | Camiones y conductores, y los viajes, horas y km de cada uno en una planificación |
 | Parámetros | Coste por km de cada camión, parámetros del sistema y precios de combustible |
+
+`database/05_flota_conductores.sql` (generado con `tools/generar_flota.py`) carga 70 camiones y 60 conductores **ficticios**. Al guardar una planificación, cada viaje recibe un camión del tipo elegido y un conductor que haya descansado 11 h desde su viaje anterior.
 
 ## Regenerar los scripts
 

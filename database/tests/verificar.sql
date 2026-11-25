@@ -53,4 +53,9 @@ UNION ALL SELECT 'Horas disponibles de reparto > 0 en todos los pedidos',
     (SELECT COUNT(*) FROM Pedidos WHERE HorasDisponiblesReparto IS NULL OR HorasDisponiblesReparto <= 0) = 0
 UNION ALL SELECT 'vw_LineasPedidoCaducidad: 17689 filas', (SELECT COUNT(*) FROM vw_LineasPedidoCaducidad) = 17689
 UNION ALL SELECT 'Cada pedido tiene al menos una linea limitante',
-    (SELECT COUNT(DISTINCT IdPedido) FROM vw_LineasPedidoCaducidad WHERE EsLimitante = 1) = 133;
+    (SELECT COUNT(DISTINCT IdPedido) FROM vw_LineasPedidoCaducidad WHERE EsLimitante = 1) = 133
+-- 05_flota_conductores.sql
+UNION ALL SELECT 'Vehiculos: 70 (40 de 12 t, 20 de 18 t, 10 de 40 t)',
+    (SELECT COUNT(*) FROM Vehiculos) = 70
+    AND (SELECT COUNT(*) FROM Vehiculos WHERE IdTipoVehiculo = 3) = 10
+UNION ALL SELECT 'Conductores: 60 con DNI unico', (SELECT COUNT(DISTINCT DNI) FROM Conductores) = 60;
