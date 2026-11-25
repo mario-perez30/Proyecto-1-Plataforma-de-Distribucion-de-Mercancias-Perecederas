@@ -1,5 +1,5 @@
 -- =====================================================================
--- Comprobaciones de BDIADelivery tras ejecutar los scripts 01, 02 y 03.
+-- Comprobaciones de BDIADelivery tras ejecutar los scripts 01 a 04.
 -- Cada fila devuelve: <comprobación> <TAB> <1 si se cumple, 0 o NULL si falla>
 -- El pipeline de CI falla si alguna fila no termina en 1.
 -- Uso: mysql -N -B BDIADelivery < database/tests/verificar.sql
@@ -36,4 +36,21 @@ UNION ALL SELECT 'Coste envio directo 12 t = 228.750 EUR (+-1 %)',
 UNION ALL SELECT 'Coste externalizado = 189.758 EUR (+-1 %)',
     (SELECT ABS(CosteExternalizado - 189758) / 189758 FROM vw_ComparativaTiposVehiculo WHERE IdTipoVehiculo = 1) < 0.01
 UNION ALL SELECT 'Cota inferior de cargas 12 t: 70',
-    (SELECT CotaInferiorCargas FROM vw_ComparativaTiposVehiculo WHERE IdTipoVehiculo = 1) = 70;
+    (SELECT CotaInferiorCargas FROM vw_ComparativaTiposVehiculo WHERE IdTipoVehiculo = 1) = 70
+-- 04_fechas_caducidad.sql
+UNION ALL SELECT 'Pedidos con fechas calculadas: 133',
+    (SELECT COUNT(*) FROM Pedidos
+      WHERE FechaInicioFabricacion IS NOT NULL AND FechaListoEnvio IS NOT NULL
+        AND FechaCaducidad IS NOT NULL AND FechaLimiteEntrega IS NOT NULL) = 133
+UNION ALL SELECT 'FechaCaducidad de Pedidos coincide con vw_PedidosResumen',
+    (SELECT COUNT(*) FROM Pedidos p JOIN vw_PedidosResumen v ON v.IdPedido = p.IdPedido
+      WHERE NOT (p.FechaCaducidad <=> v.FechaCaducidad) OR NOT (p.FechaListoEnvio <=> v.FechaListoParaEnvio)) = 0
+UNION ALL SELECT 'Totales de Pedidos coinciden con vw_PedidosResumen',
+    (SELECT COUNT(*) FROM Pedidos p JOIN vw_PedidosResumen v ON v.IdPedido = p.IdPedido
+      WHERE p.UnidadesTotales <> v.Unidades OR p.NumLineas <> v.NumLineas OR p.ImporteTotal <> v.ImporteVenta) = 0
+UNION ALL SELECT 'Unidades totales: 834.265', (SELECT SUM(UnidadesTotales) FROM Pedidos) = 834265
+UNION ALL SELECT 'Horas disponibles de reparto > 0 en todos los pedidos',
+    (SELECT COUNT(*) FROM Pedidos WHERE HorasDisponiblesReparto IS NULL OR HorasDisponiblesReparto <= 0) = 0
+UNION ALL SELECT 'vw_LineasPedidoCaducidad: 17689 filas', (SELECT COUNT(*) FROM vw_LineasPedidoCaducidad) = 17689
+UNION ALL SELECT 'Cada pedido tiene al menos una linea limitante',
+    (SELECT COUNT(DISTINCT IdPedido) FROM vw_LineasPedidoCaducidad WHERE EsLimitante = 1) = 133;
