@@ -26,10 +26,13 @@ jobs:
           cache: pip
 
       - name: Instalar dependencias
-        run: pip install -r requirements.txt ruff
+        run: pip install -r requirements.txt
 
       - name: Análisis estático (ruff)
-        run: ruff check tools
+        run: ruff check tools optimizador tests app.py
+
+      - name: Tests unitarios del optimizador (pytest)
+        run: pytest -q
 
       - name: 01_crear_base_datos.sql se regenera idéntico
         run: |
@@ -59,6 +62,8 @@ jobs:
           # Contraseña de un contenedor de pruebas efímero, no es un secreto
           MYSQL_ROOT_PASSWORD: root
           MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
         options: >-
           --health-cmd="${{ matrix.db.health }}"
           --health-interval=5s
@@ -88,3 +93,20 @@ jobs:
           done
           awk -F'\t' '$2 != "1" { print "::error::Falla: " $1; bad = 1 } END { exit bad }' resultado.txt
           echo "Todas las comprobaciones correctas ($(wc -l < resultado.txt))."
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Integración - optimizador sobre la BD
+        env:
+          BDIA_HOST: 127.0.0.1
+          BDIA_PORT: "3306"
+          BDIA_PASSWORD: root
+        run: |
+          pip install pymysql==1.2.4 cryptography==50.0.2
+          python -m optimizador --algoritmo clarke-wright
+          r=$(docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot -N -B BDIADelivery \
+            -e "SELECT PedidosPlanificados = 133 AND PedidosFueraDePlazo = 0 AND NumCamiones > 0 FROM vw_ResumenPlanificacion ORDER BY IdPlanificacion DESC LIMIT 1")
+          [ "$r" = "1" ] || { echo "::error::La planificación guardada no es válida ($r)"; exit 1; }
+          echo "Planificación guardada: 133 pedidos, 0 fuera de plazo."
