@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.sql text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+*.yml text eol=lf
+*.csv text eol=lf
+
+# Export original de SQL Server en UTF-16: no se convierte
+database/original/*.sql binary linguist-vendored
+
+*.png binary
+*.jpg binary
+*.pdf binary
