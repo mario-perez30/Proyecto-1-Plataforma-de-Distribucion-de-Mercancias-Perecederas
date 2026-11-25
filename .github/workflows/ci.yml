@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (lint y reproducibilidad)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt ruff
+
+      - name: Análisis estático (ruff)
+        run: ruff check tools
+
+      - name: 01_crear_base_datos.sql se regenera idéntico
+        run: |
+          python tools/convertir_sqlserver_a_mysql.py database/original/script_sqlserver.sql "$RUNNER_TEMP/01.sql"
+          cmp database/01_crear_base_datos.sql "$RUNNER_TEMP/01.sql"
+
+      - name: 03_corregir_coordenadas.sql se regenera idéntico
+        run: |
+          python tools/generar_coordenadas.py database/original/script_sqlserver.sql "$RUNNER_TEMP/03.sql" "$RUNNER_TEMP/mapa.png"
+          cmp database/03_corregir_coordenadas.sql "$RUNNER_TEMP/03.sql"
+
+  database:
+    name: Base de datos (${{ matrix.db.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db:
+          - { name: "MySQL 8.0",    image: "mysql:8.0",    client: "mysql",   health: "mysqladmin ping -h 127.0.0.1 -proot" }
+          - { name: "MySQL 5.7",    image: "mysql:5.7",    client: "mysql",   health: "mysqladmin ping -h 127.0.0.1 -proot" }
+          - { name: "MariaDB 10.4", image: "mariadb:10.4", client: "mysql",   health: "mysqladmin ping -h 127.0.0.1 -proot" }
+          - { name: "MariaDB 11.4", image: "mariadb:11.4", client: "mariadb", health: "healthcheck.sh --connect --innodb_initialized" }
+    services:
+      db:
+        image: ${{ matrix.db.image }}
+        env:
+          # Contraseña de un contenedor de pruebas efímero, no es un secreto
+          MYSQL_ROOT_PASSWORD: root
+          MARIADB_ROOT_PASSWORD: root
+        options: >-
+          --health-cmd="${{ matrix.db.health }}"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versión del servidor
+        run: docker exec ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot -N -e "SELECT VERSION();"
+
+      - name: Ejecutar los scripts en orden
+        run: |
+          for f in database/01_crear_base_datos.sql database/02_mejoras_costes_flota.sql database/03_corregir_coordenadas.sql; do
+            echo "::group::$f"
+            docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot --default-character-set=utf8mb4 < "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Comprobaciones (database/tests/verificar.sql)
+        run: |
+          docker exec -i ${{ job.services.db.id }} ${{ matrix.db.client }} -uroot -proot -N -B --default-character-set=utf8mb4 BDIADelivery \
+            < database/tests/verificar.sql | tee resultado.txt
+          awk -F'\t' '$2 != "1" { print "::error::Falla: " $1; bad = 1 } END { exit bad }' resultado.txt
+          echo "Todas las comprobaciones correctas ($(wc -l < resultado.txt))."
