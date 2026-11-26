@@ -26,6 +26,8 @@ database/
   03_corregir_coordenadas.sql    Coordenadas realistas para los 1.500 destinos
   04_fechas_caducidad.sql        Fechas de fabricación y caducidad y totales de cada pedido, con triggers
   05_flota_conductores.sql       70 camiones y 60 conductores ficticios
+  06_carreteras.sql              Tablas de km/tiempos y trazados por carretera real
+  07_matriz_carretera.sql        Matriz 127 x 127 por carretera (OSRM), generada
   original/script_sqlserver.sql  Export original de SQL Server (UTF-16), fuente de los scripts
   tests/verificar.sql            Comprobaciones de datos, vistas y costes
   tests/probar_triggers.sql      Prueba de los triggers (se deshace con ROLLBACK)
