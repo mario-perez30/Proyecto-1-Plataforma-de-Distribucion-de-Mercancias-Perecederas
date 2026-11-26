@@ -79,6 +79,16 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt   # Window
 
 La conexión usa las variables `BDIA_HOST`, `BDIA_PORT`, `BDIA_USER`, `BDIA_PASSWORD` y `BDIA_DB`. Por defecto, MySQL de XAMPP en local con `root` sin contraseña.
 
+### Carreteras reales
+
+Con `UsarCarreteras = 1` (por defecto), el optimizador usa los km y tiempos por carretera de `TramosCarretera`, calculados con [OSRM](https://project-osrm.org/) sobre OpenStreetMap. La velocidad del camión en cada tramo es `min(90 km/h, 0,88 × velocidad de un turismo)`: va más rápido por autovía que por nacional o en ciudad. Si se añaden destinos con pedidos, la matriz se recalcula con:
+
+```bash
+.venv/Scripts/python -m optimizador.carreteras --sql database/07_matriz_carretera.sql
+```
+
+En la simulación, el trazado de cada tramo se pide a OSRM la primera vez y se guarda en `GeometriaTramos`. Sin conexión, la ruta se dibuja en línea recta. Datos de rutas © colaboradores de OpenStreetMap (ODbL).
+
 ## Interfaz (Streamlit)
 
 ```bash

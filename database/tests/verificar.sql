@@ -58,4 +58,10 @@ UNION ALL SELECT 'Cada pedido tiene al menos una linea limitante',
 UNION ALL SELECT 'Vehiculos: 70 (40 de 12 t, 20 de 18 t, 10 de 40 t)',
     (SELECT COUNT(*) FROM Vehiculos) = 70
     AND (SELECT COUNT(*) FROM Vehiculos WHERE IdTipoVehiculo = 3) = 10
-UNION ALL SELECT 'Conductores: 60 con DNI unico', (SELECT COUNT(DISTINCT DNI) FROM Conductores) = 60;
+UNION ALL SELECT 'Conductores: 60 con DNI unico', (SELECT COUNT(DISTINCT DNI) FROM Conductores) = 60
+-- 06 y 07: carreteras reales
+UNION ALL SELECT 'TramosCarretera: 127 x 127 puntos', (SELECT COUNT(*) FROM TramosCarretera) = 16129
+UNION ALL SELECT 'Todos los tramos distintos tienen km y tiempo',
+    (SELECT COUNT(*) FROM TramosCarretera WHERE PuntoOrigen <> PuntoDestino AND (Km <= 0 OR MinutosCamion <= 0)) = 0
+UNION ALL SELECT 'Velocidad media del camion entre 40 y 90 km/h',
+    (SELECT AVG(Km / (MinutosCamion / 60)) FROM TramosCarretera WHERE PuntoOrigen <> PuntoDestino) BETWEEN 40 AND 90;

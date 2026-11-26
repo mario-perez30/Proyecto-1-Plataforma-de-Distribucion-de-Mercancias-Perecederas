@@ -63,7 +63,7 @@ def _resolver_oleada(esc: Escenario, km: list[list[float]], indices: list[int],
     routing = pywrapcp.RoutingModel(manager)
 
     # Coste: km x (€/km sin conductor + €/km del conductor), en céntimos
-    eur_km = tipo.coste_km_sin_conductor + p.coste_conductor_h / tipo.velocidad_kmh
+    eur_km = tipo.coste_km_sin_conductor + p.coste_conductor_h / tipo.velocidad_kmh   # aproximación para el coste
 
     def coste(desde: int, hasta: int) -> int:
         a, b = manager.IndexToNode(desde), manager.IndexToNode(hasta)
@@ -86,7 +86,8 @@ def _resolver_oleada(esc: Escenario, km: list[list[float]], indices: list[int],
     def tiempo(desde: int, hasta: int) -> int:
         a, b = manager.IndexToNode(desde), manager.IndexToNode(hasta)
         servicio = 0.0 if a == 0 else esc.pedidos[indices[a - 1]].descarga_h
-        conduccion = km[global_de(a)][global_de(b)] / tipo.velocidad_kmh
+        ga, gb = global_de(a), global_de(b)
+        conduccion = esc.horas[ga][gb] if esc.horas else km[ga][gb] / tipo.velocidad_kmh
         return int(round((servicio + conduccion * f) * 60))
 
     horizonte = 60 * 24 * 30

@@ -113,4 +113,29 @@ def cargar_escenario(conn, id_escenario: int = 1, id_tipo_vehiculo: int = 1) -> 
         r = cur.fetchone()
         tarifa = TarifaExterna(float(r["CosteFijoEnvio"]), float(r["CosteKm"]), float(r["CosteUnidad"])) if r else None
 
-    return Escenario(id=id_escenario, almacen=almacen, pedidos=pedidos, tipo=tipo, params=params, tarifa=tarifa)
+        carretera = cargar_carretera(cur, {0} | {p.id_destino for p in pedidos})
+
+    return Escenario(id=id_escenario, almacen=almacen, pedidos=pedidos, tipo=tipo, params=params, tarifa=tarifa,
+                     carretera=carretera)
+
+
+def cargar_carretera(cur, puntos: set[int]) -> dict | None:
+    """Km y horas de camión por carretera real entre los puntos (0 = almacén, si no IdDestino).
+
+    Devuelve None (se usará la línea recta) si UsarCarreteras = 0, si no existe la
+    tabla TramosCarretera (falta el script 06) o si falta algún tramo.
+    """
+    cur.execute("SELECT Valor FROM ParametrosSistema WHERE Clave = 'UsarCarreteras'")
+    fila = cur.fetchone()
+    if fila is None or float(fila["Valor"]) != 1:
+        return None
+    marcas = ", ".join(["%s"] * len(puntos))
+    try:
+        cur.execute(f"SELECT PuntoOrigen, PuntoDestino, Km, MinutosCamion FROM TramosCarretera "
+                    f"WHERE PuntoOrigen IN ({marcas}) AND PuntoDestino IN ({marcas})", (*puntos, *puntos))
+    except pymysql.err.ProgrammingError:
+        return None
+    tramos = {(f["PuntoOrigen"], f["PuntoDestino"]): (float(f["Km"]), float(f["MinutosCamion"]) / 60)
+              for f in cur.fetchall()}
+    completos = all((a, b) in tramos for a in puntos for b in puntos if a != b)
+    return tramos if completos else None

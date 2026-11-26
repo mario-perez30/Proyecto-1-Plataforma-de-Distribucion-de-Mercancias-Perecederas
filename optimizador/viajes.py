@@ -38,10 +38,14 @@ def evaluar_viaje(secuencia: list[int], esc: Escenario, km: list[list[float]],
     if unidades > tipo.capacidad:
         factible, motivo = False, f"capacidad superada ({unidades} > {tipo.capacidad})"
 
+    def horas(a: int, b: int) -> float:
+        """Horas de conducción: por carretera real si hay datos; si no, a velocidad media constante."""
+        return esc.horas[a][b] if esc.horas else km[a][b] / tipo.velocidad_kmh
+
     for tramo, (i, ped) in enumerate(zip(secuencia, pedidos)):
         d = km[nodo_ant][i + 1]
         reloj.tramo = tramo
-        reloj.conducir(d / tipo.velocidad_kmh)
+        reloj.conducir(horas(nodo_ant, i + 1))
         llegada = reloj.t
         reloj.trabajar(ped.descarga_h, "descarga")
         paradas.append(Parada(pedido=ped, km_desde_anterior=d, llegada=llegada, salida=reloj.t))
@@ -52,7 +56,7 @@ def evaluar_viaje(secuencia: list[int], esc: Escenario, km: list[list[float]],
 
     d = km[nodo_ant][0]
     reloj.tramo = len(pedidos)
-    reloj.conducir(d / tipo.velocidad_kmh)
+    reloj.conducir(horas(nodo_ant, 0))
     km_total += d
 
     pernoctas = reloj.descansos_diarios

@@ -93,19 +93,34 @@ const num = (x, dec=0) => x.toLocaleString("es-ES", {minimumFractionDigits:dec, 
 // --- Mapa -------------------------------------------------------------------
 const mapa = L.map("mapa", { zoomControl:true });
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-  { attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:18 }).addTo(mapa);
+  { attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · rutas OSRM', maxZoom:18 }).addTo(mapa);
 const pts = D.puntos.map(p => L.latLng(p[0], p[1]));
-L.polyline(pts, { color:"#94a3b8", weight:4, dashArray:"6 8" }).addTo(mapa);
+const aLL = q => L.latLng(q[0], q[1]);
+const rutaCompleta = D.tramos.flatMap(t => t.p.map(aLL));
+L.polyline(rutaCompleta, { color:"#94a3b8", weight:4, dashArray: D.carretera ? null : "6 8" }).addTo(mapa);
 const recorrido = L.polyline([], { color:"#e11d48", weight:5 }).addTo(mapa);
-mapa.fitBounds(L.latLngBounds(pts).pad(0.15));
+mapa.fitBounds(L.latLngBounds(rutaCompleta).pad(0.1));
+// El iframe puede no tener aún su tamaño final: se recalcula y se vuelve a encuadrar
+setTimeout(() => { mapa.invalidateSize(); mapa.fitBounds(L.latLngBounds(rutaCompleta).pad(0.1)); }, 400);
+
+// Posición en el tramo según la fracción de tiempo f (los segmentos rápidos se recorren antes)
+function enTramo(tramo, f) {
+  const T = D.tramos[Math.min(tramo, D.tramos.length - 1)];
+  let k = 0;
+  while (k < T.tf.length - 2 && T.tf[k + 1] < f) k++;
+  const u = Math.max(0, Math.min(1, (f - T.tf[k]) / ((T.tf[k + 1] - T.tf[k]) || 1)));
+  const a = T.p[k], b = T.p[k + 1];
+  return { ll: L.latLng(a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u), k,
+           kf: T.kf[k] + (T.kf[k + 1] - T.kf[k]) * u, v: T.v[Math.min(k, T.v.length - 1)] };
+}
+const via = v => v >= 80 ? "autopista / autovía" : v >= 55 ? "carretera" : "zona urbana o tramo lento";
 L.marker(pts[0], { icon:L.divIcon({ className:"", html:'<div class="num" style="background:#e11d48;width:28px;height:28px;line-height:28px">M</div>', iconSize:[28,28] }) })
   .addTo(mapa).bindTooltip("Mataró · almacén");
 const marcasParada = D.paradas.map((p, i) => L.marker(pts[i+1], { icon:L.divIcon({ className:"", html:`<div class="num">${p.orden}</div>`, iconSize:[22,22] }) })
   .addTo(mapa).bindTooltip(`${p.orden}. ${p.ciudad} (${p.pais}) · pedido ${p.pedido} · ${num(p.unidades)} uds`));
 const camion = L.marker(pts[0], { icon:L.divIcon({ className:"camion", html:"🚚", iconSize:[28,28], iconAnchor:[14,14] }), zIndexOffset:1000 }).addTo(mapa);
 
-const pos = (tramo, f) => { const a = pts[tramo], b = pts[Math.min(tramo+1, pts.length-1)];
-  return L.latLng(a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f); };
+const pos = (tramo, f) => enTramo(tramo, f).ll;
 // Puntos donde el conductor hace pausas y descansos
 D.eventos.filter(e => e.tipo === "pausa" || e.tipo === "descanso").forEach(e => {
   L.circleMarker(pos(e.tramo, e.f0), { radius: e.tipo === "descanso" ? 7 : 5, color:"#fff", weight:2,
@@ -144,24 +159,26 @@ function estado(t) {
 let t = T0, play = false, ultimo = null;
 function pintar() {
   const s = estado(t);
-  const p = pos(s.tramo, s.f);
+  const g = enTramo(s.tramo, s.f), p = g.ll;
   camion.setLatLng(p);
-  recorrido.setLatLngs(pts.slice(0, s.tramo + 1).concat([p]));
+  recorrido.setLatLngs(D.tramos.slice(0, s.tramo).flatMap(x => x.p.map(aLL))
+    .concat(D.tramos[s.tramo].p.slice(0, g.k + 1).map(aLL), [p]));
   if (document.getElementById("seguir").checked && play) mapa.panTo(p, { animate:false });
   const entregados = D.paradas.filter(x => x.salida <= t);
   const enDescarga = s.tipo === "descarga" ? D.paradas[s.tramo] : null;
   const aBordo = D.unidades - entregados.reduce((a, x) => a + x.unidades, 0);
   const prox = D.paradas.find(x => x.salida > t);
-  const km = s.tipo === "fin" ? D.km_total : kmAntes(s.tramo) + s.f * D.km_tramos[s.tramo];
+  const km = s.tipo === "fin" ? D.km_total : kmAntes(s.tramo) + g.kf * D.km_tramos[s.tramo];
   document.getElementById("reloj").textContent = "🕒 " + fecha(t);
   const est = document.getElementById("estado");
   est.textContent = NOMBRES[s.tipo]; est.style.background = s.tipo === "fin" ? "#111" : COLORES[s.tipo];
   let det = "";
   if (s.ev && s.tipo !== "conduccion") det = `Hasta las ${fecha(s.ev.fin)}`;
   if (enDescarga) det = `Entregando el pedido ${enDescarga.pedido} en ${enDescarga.ciudad} · ${det}`;
-  if (s.tipo === "conduccion") det = s.tramo < D.paradas.length ? `Hacia ${D.paradas[s.tramo].ciudad}` : "Volviendo a Mataró";
+  if (s.tipo === "conduccion") det = (s.tramo < D.paradas.length ? `Hacia ${D.paradas[s.tramo].ciudad}` : "Volviendo a Mataró")
+    + ` · por ${via(g.v)}`;
   document.getElementById("detalle").textContent = det;
-  document.getElementById("v_vel").textContent = s.tipo === "conduccion" ? `${num(D.velocidad)} km/h` : "0 km/h";
+  document.getElementById("v_vel").textContent = s.tipo === "conduccion" ? `${num(g.v)} km/h` : "0 km/h";
   document.getElementById("v_km").textContent = `${num(km)} / ${num(D.km_total)}`;
   document.getElementById("v_dia").textContent = `${num(s.dia, 1)} h`;
   document.getElementById("b_dia").style.width = Math.min(100, 100 * s.dia / D.params.max_diaria) + "%";
@@ -195,7 +212,7 @@ document.getElementById("play").onclick = () => {
   document.getElementById("play").textContent = play ? "⏸ Pausa" : "▶ Reproducir";
 };
 document.getElementById("reinicio").onclick = () => { t = T0; play = false; ultimo = null;
-  document.getElementById("play").textContent = "▶ Reproducir"; mapa.fitBounds(L.latLngBounds(pts).pad(0.15)); pintar(); };
+  document.getElementById("play").textContent = "▶ Reproducir"; mapa.fitBounds(L.latLngBounds(rutaCompleta).pad(0.1)); pintar(); };
 
 document.getElementById("tit").textContent = `Camión ${D.camion} · viaje ${D.viaje} · ${D.matricula}`;
 document.getElementById("sub").textContent = `👤 ${D.conductor} · ${D.tipo} · ${num(D.unidades)} uds (${num(100 * D.unidades / D.capacidad)} % de carga) · ${num(D.km_total)} km · ${num(D.coste)} €`;
