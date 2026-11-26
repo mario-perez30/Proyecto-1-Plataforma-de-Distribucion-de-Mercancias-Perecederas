@@ -15,6 +15,7 @@ Páginas (menú lateral):
 from __future__ import annotations
 
 import json
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -31,7 +32,7 @@ st.set_page_config(page_title="IA DELIVERY · Planificador de rutas", page_icon=
 PLANTILLA = Path(__file__).parent / "interfaz" / "simulacion.html"
 ALGORITMOS = {"OR-Tools": "ortools", "Clarke-Wright": "clarke-wright", "Envío directo (un camión por pedido)": "directo"}
 PAGINAS = ["🚚 Simulación en tiempo real", "🧭 Planificar", "📊 Comparativa", "📦 Pedidos",
-           "👥 Flota y conductores", "⚙️ Parámetros"]
+           "👥 Flota y conductores", "⚙️ Parámetros", "🛒 Nuevo pedido"]
 
 st.markdown("""
 <style>
@@ -291,6 +292,120 @@ def pagina_comparativa() -> None:
 # ---------------------------------------------------------------------------
 # Pedidos
 # ---------------------------------------------------------------------------
+def ir_a(pagina: str) -> None:
+    st.session_state["pagina"] = pagina
+
+
+def pagina_nuevo_pedido() -> None:
+    """Alta de un pedido: cliente, destino, fecha, prioridad y líneas (producto y cantidad)."""
+    clientes = consulta("SELECT IdCliente, Nombre, CIF FROM Clientes ORDER BY Nombre")
+    destinos = consulta("SELECT d.IdDestino, d.Ciudad, d.Direccion, d.IdPais, p.Nombre AS Provincia "
+                        "FROM Destinos d JOIN Provincias p ON p.IdProvincia = d.IdProvincia "
+                        "ORDER BY d.IdPais, p.Nombre, d.Ciudad, d.IdDestino")
+    productos = consulta("SELECT p.IdProducto, p.Nombre, c.Nombre AS Familia, r.Nombre AS Temperatura, "
+                         "p.PrecioVenta, p.TiempoFabricacionMedioDias AS Fab, p.CaducidadDias AS Cad "
+                         "FROM Productos p JOIN Categorias c ON c.IdCategoria = p.IdCategoria "
+                         "JOIN RegimenesTemperatura r ON r.IdRegimen = c.IdRegimen ORDER BY p.Nombre")
+    lineas: list[dict] = st.session_state.setdefault("lineas_pedido", [])
+
+    if "pedido_creado" in st.session_state:
+        p, carretera = st.session_state.pop("pedido_creado")
+        st.success(f"Pedido {p['IdPedido']} creado: {p['NumLineas']} líneas, {miles(p['UnidadesTotales'])} uds, "
+                   f"{euros(float(p['ImporteTotal']))}. Listo para envío el {p['FechaListoEnvio']:%d/%m/%Y}, "
+                   f"caduca el {p['FechaCaducidad']:%d/%m/%Y} y debe entregarse antes del "
+                   f"{p['FechaLimiteEntrega']:%d/%m/%Y %H:%M}.")
+        if not carretera:
+            st.warning("No se han podido calcular los tramos por carretera del destino (sin conexión con OSRM): "
+                       "hasta que se calculen, el optimizador usará distancias en línea recta.")
+        st.button("🧭 Planificar ahora", on_click=ir_a, args=(PAGINAS[1],))
+
+    with st.container(border=True):
+        st.markdown("##### Datos del pedido")
+        c1, c2, c3 = st.columns(3)
+        cliente = c1.selectbox("Cliente", clientes.to_dict("records"), format_func=lambda c: f"{c['Nombre']} · {c['CIF']}")
+        pais = c2.selectbox("País", sorted(destinos["IdPais"].unique()),
+                            format_func=lambda x: {"ES": "España", "PT": "Portugal", "AD": "Andorra"}.get(x, x))
+        provincia = c3.selectbox("Provincia / distrito / parroquia",
+                                 sorted(destinos[destinos["IdPais"] == pais]["Provincia"].unique()))
+        opciones = destinos[(destinos["IdPais"] == pais) & (destinos["Provincia"] == provincia)].to_dict("records")
+        destino = st.selectbox("Destino (centro logístico del cliente)", opciones,
+                               format_func=lambda d: f"{d['Ciudad']} · {d['Direccion']} (destino {d['IdDestino']})")
+        c4, c5, c6, c7 = st.columns([2, 2, 1, 2])
+        escenario = c4.selectbox("Escenario", ESCENARIOS, format_func=lambda e: f"{e['Nombre']} ({e['Tipo']})")
+        dia = c5.date_input("Fecha del pedido", value=date.today(), format="DD/MM/YYYY")
+        hora = c6.time_input("Hora", value=time(9, 0))
+        prioridad = c7.slider("Prioridad (1 = máxima)", 1, 5, 3)
+
+    with st.container(border=True):
+        st.markdown("##### Líneas del pedido")
+        a, b, c, d = st.columns([2, 4, 1, 1])
+        familia = a.selectbox("Familia", sorted(productos["Familia"].unique()))
+        producto = b.selectbox(
+            "Producto", productos[productos["Familia"] == familia].to_dict("records"),
+            format_func=lambda p: f"{p['Nombre']} · {p['PrecioVenta']} € · fabricación {p['Fab']} d · caduca a los {p['Cad']} d")
+        cantidad = c.number_input("Cantidad", 1, 500, 100)
+        d.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+        if d.button("➕ Añadir", use_container_width=True):
+            existente = next((x for x in lineas if x["IdProducto"] == producto["IdProducto"]), None)
+            if existente:
+                existente["Cantidad"] = min(500, existente["Cantidad"] + int(cantidad))
+            else:
+                lineas.append({"IdProducto": producto["IdProducto"], "Producto": producto["Nombre"],
+                               "Familia": producto["Familia"], "Temperatura": producto["Temperatura"],
+                               "Precio": float(producto["PrecioVenta"]), "Fab": int(producto["Fab"]),
+                               "Cad": int(producto["Cad"]), "Cantidad": int(cantidad)})
+
+        if not lineas:
+            st.info("Añade al menos una línea con el botón ➕ Añadir.")
+            return
+        editado = st.data_editor(
+            pd.DataFrame(lineas), num_rows="dynamic", hide_index=True, use_container_width=True, key="editor_lineas",
+            column_config={"Cantidad": st.column_config.NumberColumn(min_value=1, max_value=500, step=1),
+                           "Precio": st.column_config.NumberColumn(format="%.2f €")},
+            disabled=["IdProducto", "Producto", "Familia", "Temperatura", "Precio", "Fab", "Cad"])
+        lineas[:] = editado.dropna(subset=["IdProducto"]).to_dict("records")
+        if not lineas:
+            return
+
+        unidades = sum(int(x["Cantidad"]) for x in lineas)
+        importe = sum(int(x["Cantidad"]) * x["Precio"] for x in lineas)
+        listo = dia + timedelta(days=1 + max(x["Fab"] for x in lineas))
+        caduca = listo + timedelta(days=min(x["Cad"] for x in lineas))
+        k = st.columns(4)
+        k[0].metric("Líneas · unidades", f"{len(lineas)} · {miles(unidades)}")
+        k[1].metric("Importe", euros(importe))
+        k[2].metric("Listo para envío (estimado)", f"{listo:%d/%m/%Y}")
+        k[3].metric("Caducidad (estimada)", f"{caduca:%d/%m/%Y}")
+        if unidades > max(t["CapacidadUnidades"] for t in TIPOS):
+            st.warning("El pedido no cabe en ningún tipo de camión: el enunciado exige entregarlo en un solo vehículo.")
+
+    g1, g2, _ = st.columns([1, 1, 4])
+    if g2.button("🗑️ Vaciar líneas"):
+        lineas.clear()
+        st.rerun()
+    if g1.button("💾 Guardar pedido", type="primary"):
+        from optimizador.pedidos import asegurar_carretera, crear_pedido
+        conn = conectar()
+        try:
+            pedido = crear_pedido(conn, cliente["IdCliente"], destino["IdDestino"], escenario["IdEscenario"],
+                                  [(int(x["IdProducto"]), int(x["Cantidad"])) for x in lineas],
+                                  fecha=datetime.combine(dia, hora), prioridad=prioridad)
+        except ValueError as e:
+            st.error(str(e))
+            return
+        finally:
+            conn.close()
+        with st.spinner("Calculando las carreteras del destino…"):
+            conn = conectar()
+            try:
+                carretera = asegurar_carretera(conn, destino["IdDestino"])
+            finally:
+                conn.close()
+        lineas.clear()
+        st.session_state["pedido_creado"] = (pedido, carretera)
+        st.rerun()
+
+
 def pagina_pedidos() -> None:
     ped = consulta("SELECT p.IdPedido, p.IdEscenario, c.Nombre AS Cliente, d.Ciudad, d.IdPais AS Pais, p.NumLineas, "
                    "p.UnidadesTotales, p.ImporteTotal, p.FechaPedido, p.FechaInicioFabricacion, p.FechaListoEnvio, "
@@ -357,4 +472,5 @@ def pagina_parametros() -> None:
 {
     PAGINAS[0]: pagina_simulacion, PAGINAS[1]: pagina_planificar, PAGINAS[2]: pagina_comparativa,
     PAGINAS[3]: pagina_pedidos, PAGINAS[4]: pagina_flota, PAGINAS[5]: pagina_parametros,
+    PAGINAS[6]: pagina_nuevo_pedido,
 }[pagina]()

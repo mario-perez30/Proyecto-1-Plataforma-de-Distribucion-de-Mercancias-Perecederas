@@ -128,6 +128,28 @@ def cargar_trazado(conn, a: int, b: int, pa: tuple[float, float], pb: tuple[floa
     return puntos
 
 
+def tramos_de_punto(nuevo: int, puntos: dict[int, tuple[float, float]], v_max: float = 90.0,
+                    factor: float = 0.88) -> list[tuple[int, int, float, float, float]]:
+    """Tramos entre un punto nuevo y todos los demás, en los dos sentidos (para un destino nuevo)."""
+    otros = [p for p in puntos if p != nuevo]
+    filas = []
+    for i in range(0, len(otros), 80):
+        bloque = otros[i:i + 80]
+        coords = _coords([puntos[nuevo]] + [puntos[x] for x in bloque])
+        resto = ";".join(str(k) for k in range(1, len(bloque) + 1))
+        for ida in (True, False):
+            src, dst = ("0", resto) if ida else (resto, "0")
+            r = _get(f"{OSRM}/table/v1/driving/{coords}?sources={src}&destinations={dst}&annotations=distance,duration")
+            for k, x in enumerate(bloque):
+                d = r["distances"][0][k] if ida else r["distances"][k][0]
+                t = r["durations"][0][k] if ida else r["durations"][k][0]
+                km, mc = (d or 0) / 1000, (t or 0) / 60
+                a, b = (nuevo, x) if ida else (x, nuevo)
+                filas.append((a, b, round(km, 3), round(mc, 2), round(minutos_camion(km, mc, v_max, factor), 2)))
+            time.sleep(PAUSA_S)
+    return filas
+
+
 def puntos_con_pedidos(conn) -> dict[int, tuple[float, float]]:
     """Almacén principal (0) y destinos que tienen algún pedido."""
     with conn.cursor() as cur:
