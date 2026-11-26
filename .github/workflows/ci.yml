@@ -117,3 +117,4 @@ jobs:
                 FROM vw_ResumenPlanificacion ORDER BY IdPlanificacion DESC LIMIT 1")
           [ "$r" = "1" ] || { echo "::error::La planificación guardada no es válida ($r)"; exit 1; }
           echo "Planificación guardada: 133 pedidos, 0 fuera de plazo."
+          python -m optimizador.pedidos --prueba
