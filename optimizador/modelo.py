@@ -94,6 +94,10 @@ class Escenario:
     tipo: TipoVehiculo
     params: Parametros = field(default_factory=Parametros)
     tarifa: TarifaExterna | None = None
+    # Carreteras reales: {(punto_a, punto_b): (km, horas de camión)} con 0 = almacén y si no, IdDestino.
+    carretera: dict | None = None
+    # Horas de conducción entre nodos (0 = almacén, i + 1 = pedido i); la rellena matriz_escenario.
+    horas: list | None = None
 
 
 @dataclass

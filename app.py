@@ -24,7 +24,7 @@ import streamlit.components.v1 as components
 from optimizador.datos import cargar_escenario, conectar, listar_escenarios, listar_tipos_vehiculo
 from optimizador.persistencia import guardar_solucion
 from optimizador.planificador import planificar
-from optimizador.simulacion import cargar_rutas, carga_de_pedidos, datos_animacion, viaje_de_ruta
+from optimizador.simulacion import cargar_rutas, carga_de_pedidos, datos_animacion, trazados_de_viaje, viaje_de_ruta
 
 st.set_page_config(page_title="IA DELIVERY · Planificador de rutas", page_icon="🚚", layout="wide")
 
@@ -86,6 +86,16 @@ def carga(ids: tuple[int, ...]) -> dict:
     conn = conectar()
     try:
         return carga_de_pedidos(conn, list(ids))
+    finally:
+        conn.close()
+
+
+@st.cache_data(show_spinner=False)
+def trazados(id_plan: int, id_ruta: int, _esc, _viaje) -> list:
+    """Trazado por carretera de cada tramo de la ruta (GeometriaTramos u OSRM la primera vez)."""
+    conn = conectar()
+    try:
+        return trazados_de_viaje(conn, _esc, _viaje)
     finally:
         conn.close()
 
@@ -166,7 +176,11 @@ def pagina_simulacion() -> None:
 
     viaje = viaje_de_ruta(esc, km, ruta)
     carga_pedidos = carga(tuple(p.pedido.id for p in viaje.paradas))
-    datos = datos_animacion(esc, viaje, ruta, carga_pedidos)
+    with st.spinner("Trazando la ruta por carretera…"):
+        geo = trazados(int(id_plan), int(ruta["IdRuta"]), esc, viaje)
+    if not any(geo):
+        st.warning("Sin conexión con el servicio de rutas: el trayecto se dibuja en línea recta.")
+    datos = datos_animacion(esc, viaje, ruta, carga_pedidos, geo)
     html = PLANTILLA.read_text(encoding="utf-8").replace("/*__DATOS__*/null", json.dumps(datos, ensure_ascii=False))
     components.html(html, height=640, scrolling=False)
 

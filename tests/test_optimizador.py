@@ -127,6 +127,28 @@ def test_conductor_descansa_entre_viajes(escenario):
             assert (b.salida - a.regreso).total_seconds() / 3600 >= escenario.params.descanso_diario_h
 
 
+def test_carretera_real_usa_sus_km_y_tiempos(escenario):
+    from dataclasses import replace
+    puntos = [0] + [p.id_destino for p in escenario.pedidos]
+    carretera = {(a, b): (100.0 + a + b, 2.0) for a in puntos for b in puntos if a != b}
+    esc = replace(escenario, carretera=carretera)
+    km = matriz_escenario(esc)
+    assert km[0][1] == pytest.approx(101.0) and esc.horas[0][1] == pytest.approx(2.0)
+    v = evaluar_viaje([0], esc, km)
+    assert v.horas_conduccion == pytest.approx(4.0), "2 h de ida + 2 h de vuelta, sin usar la velocidad media"
+
+
+def test_velocidad_camion_limitada_y_tramo_animado():
+    from optimizador.carreteras import velocidad_camion
+    from optimizador.simulacion import _tramo_animado
+    assert velocidad_camion(130) == 90 and velocidad_camion(50) == pytest.approx(44)
+    trazado = [[41.0, 2.0, 0.0, 0.0], [41.1, 2.0, 9.0, 90.0], [41.2, 2.0, 10.0, 30.0]]
+    t = _tramo_animado(trazado, [41.0, 2.0], [41.2, 2.0], horas=0.2)
+    assert t["tf"][0] == 0 and t["tf"][-1] == pytest.approx(1)
+    assert t["tf"][1] == pytest.approx(0.75), "9 km a 90 km/h = 0,1 h de 0,1333 h"
+    assert t["v"][0] > t["v"][1], "la autovía es más rápida que el tramo urbano"
+
+
 @pytest.mark.parametrize("algoritmo", ["directo", "clarke-wright", "ortools"])
 def test_planificar_sin_pedidos_fuera_de_plazo(escenario, algoritmo):
     sol = planificar(escenario, algoritmo, segundos=2)

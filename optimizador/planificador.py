@@ -14,7 +14,23 @@ ALGORITMOS = ("directo", "clarke-wright", "ortools")
 
 
 def matriz_escenario(esc: Escenario) -> list[list[float]]:
-    """Matriz de km con el almacén en la posición 0 y el pedido i en la i + 1."""
+    """Matriz de km con el almacén en la posición 0 y el pedido i en la i + 1.
+
+    Con carreteras reales (esc.carretera) usa los km y tiempos de OSRM y rellena
+    esc.horas; si no, línea recta x factor de carretera y velocidad media constante.
+    """
+    if esc.carretera:
+        claves = [0] + [p.id_destino for p in esc.pedidos]
+        n = len(claves)
+        km = [[0.0] * n for _ in range(n)]
+        horas = [[0.0] * n for _ in range(n)]
+        for i, a in enumerate(claves):
+            for j, b in enumerate(claves):
+                if a != b:
+                    km[i][j], horas[i][j] = esc.carretera[(a, b)]
+        esc.horas = horas
+        return km
+    esc.horas = None
     puntos = [(esc.almacen.lat, esc.almacen.lon)] + [(p.lat, p.lon) for p in esc.pedidos]
     return matriz_km(puntos, esc.params.factor_carretera)
 

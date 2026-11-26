@@ -75,14 +75,57 @@ def carga_de_pedidos(conn, ids: list[int]) -> dict[int, list[dict]]:
     return out
 
 
-def datos_animacion(esc: Escenario, viaje: Viaje, ruta: dict, carga: dict[int, list[dict]]) -> dict:
+def trazados_de_viaje(conn, esc: Escenario, viaje: Viaje) -> list[list[list[float]] | None]:
+    """Trazado por carretera de cada tramo del viaje (Mataró -> paradas -> Mataró), con caché en la BD."""
+    from .carreteras import cargar_trazado
+    alm = (esc.almacen.lat, esc.almacen.lon)
+    nodos = [(0, alm)] + [(p.pedido.id_destino, (p.pedido.lat, p.pedido.lon)) for p in viaje.paradas] + [(0, alm)]
+    return [cargar_trazado(conn, a, b, pa, pb) if a != b else None
+            for (a, pa), (b, pb) in zip(nodos, nodos[1:])]
+
+
+def _tramo_animado(trazado: list[list[float]] | None, a: list[float], b: list[float], horas: float) -> dict:
+    """Puntos del tramo con la fracción de tiempo (tf) y de km (kf) en cada punto y la velocidad (v) de cada segmento.
+
+    Las velocidades de OSRM se escalan para que el tramo dure exactamente las horas de la simulación.
+    Sin trazado (sin red), línea recta a velocidad media.
+    """
+    if not trazado or len(trazado) < 2:
+        return {"p": [a, b], "tf": [0, 1], "kf": [0, 1], "v": [0.0]}
+    tiempos = [(q[2] - p[2]) / q[3] for p, q in zip(trazado, trazado[1:])]
+    total_t, total_km = sum(tiempos) or 1.0, trazado[-1][2] or 1.0
+    escala = total_t / horas if horas > 0 else 1.0
+    tf, acum = [0.0], 0.0
+    for t in tiempos:
+        acum += t
+        tf.append(round(acum / total_t, 5))
+    return {"p": [[x[0], x[1]] for x in trazado], "tf": tf,
+            "kf": [round(x[2] / total_km, 5) for x in trazado],
+            "v": [round(q[3] * escala, 1) for q in trazado[1:]]}
+
+
+def datos_animacion(esc: Escenario, viaje: Viaje, ruta: dict, carga: dict[int, list[dict]],
+                    trazados: list | None = None) -> dict:
     """Diccionario serializable a JSON con todo lo que necesita el componente de simulación."""
     alm = esc.almacen
     puntos = [[alm.lat, alm.lon]] + [[p.pedido.lat, p.pedido.lon] for p in viaje.paradas] + [[alm.lat, alm.lon]]
     km_tramos = [p.km_desde_anterior for p in viaje.paradas]
     km_tramos.append(viaje.km_total - sum(km_tramos))
     ciudades = {p["IdPedido"]: (p["Ciudad"], p["IdPais"]) for p in ruta["Paradas"]}
+    horas_tramo = [0.0] * len(km_tramos)
+    for e in viaje.eventos:
+        if e["tipo"] == "conduccion":
+            horas_tramo[e["tramo"]] += (e["fin"] - e["inicio"]).total_seconds() / 3600
+    trazados = trazados or [None] * len(km_tramos)
+    tramos = []
+    for i, h in enumerate(horas_tramo):
+        t = _tramo_animado(trazados[i], puntos[i], puntos[i + 1], h)
+        if t["v"] == [0.0]:
+            t["v"] = [round(km_tramos[i] / h, 1) if h > 0 else 0.0]
+        tramos.append(t)
     return {
+        "tramos": tramos,
+        "carretera": any(trazados),
         "almacen": {"lat": alm.lat, "lon": alm.lon, "nombre": "Mataró"},
         "puntos": puntos,
         "km_tramos": km_tramos,
